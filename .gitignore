@@ -1,0 +1,7 @@
+/agamoto
+*.exe
+.DS_Store
+.env
+.env.local
+vendor/
+dist/

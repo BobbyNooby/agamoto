@@ -1,0 +1,32 @@
+package nmap
+
+import (
+	"bytes"
+	"fmt"
+	"os/exec"
+	"strings"
+)
+
+func Run(target, ports string, timeout ...string) ([]byte, error) {
+	args := []string{"-oX", "-", "-sV"}
+	if ports != "" {
+		args = append(args, "-p", ports)
+	}
+	if len(timeout) > 0 && timeout[0] != "" {
+		args = append(args, "--max-rtt-timeout", timeout[0])
+	}
+	args = append(args, target)
+
+	var stdout, stderr bytes.Buffer
+	cmd := exec.Command("nmap", args...)
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	if err := cmd.Run(); err != nil {
+		if len(stderr.Bytes()) > 0 {
+			return nil, fmt.Errorf("nmap: %s: %w", strings.TrimSpace(stderr.String()), err)
+		}
+		return nil, fmt.Errorf("nmap: %w", err)
+	}
+	return stdout.Bytes(), nil
+}
