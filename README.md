@@ -15,18 +15,78 @@ go build -o agamoto ./cmd/agamoto
 
 ## Usage
 
+### Scan a target
+
+Everything after `--` is passed directly to `nmap`:
+
 ```bash
-./agamoto scan <target>
-./agamoto scan scanme.nmap.org -p 22,80,443
-./agamoto scan localhost -p 1-65535 -v
+# Scan default ports
+./agamoto scan localhost
+
+# Pass specific nmap flags
+./agamoto scan localhost -- -p 22,80,443 -sV -v
+./agamoto scan 10.0.0.1 -- -p 1-65535 -sV -A
+
+# Save output to file
+./agamoto scan scanme.nmap.org -o report.txt -- -p 22,80 -sV
 ```
 
-## Flags
+### Configure defaults
+
+Set API provider preferences (used once AI is wired in):
+
+```bash
+./agamoto config --api-key sk-or-v1-...
+./agamoto config --api-base https://api.openai.com/v1
+./agamoto config --model gpt-4o
+
+# View current config
+./agamoto config
+```
+
+Configuration is stored in `~/.config/agamoto/config.json`.
+
+## Commands
 
 ```
--p, --ports   Port range (default: 21-23,25,53,80,443,8080)
--v, --verbose Include closed/refused ports
--o, --output  Write results to file
+agamoto scan <target> [flags] [-- <nmap-args>]
+
+Flags:
+  -o, --output FILE        Write results to file
+      --no-deep-research   Skip fetching full articles
+      --no-web-search      Skip web research
+
+agamoto config             View configuration
+agamoto config [flags]     Update configuration
+
+Config flags:
+      --api-key KEY        OpenAI-compatible API key (env: OPENAI_API_KEY)
+      --api-base URL       OpenAI-compatible base URL (env: OPENAI_BASE_URL)
+                           default: https://openrouter.ai/api/v1
+      --model NAME         Model name (env: AI_MODEL)
+                           default: deepseek/deepseek-v4-flash
+```
+
+## Configuration precedence
+
+```
+defaults < config file < environment variables < flags
+```
+
+## Common API bases
+
+```bash
+# OpenRouter (default)
+--api-base https://openrouter.ai/api/v1
+
+# OpenAI
+--api-base https://api.openai.com/v1
+
+# Groq
+--api-base https://api.groq.com/openai/v1
+
+# Ollama local
+--api-base http://localhost:11434/v1
 ```
 
 ## Testing
