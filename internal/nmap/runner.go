@@ -3,6 +3,8 @@ package nmap
 import (
 	"bytes"
 	"fmt"
+	"io"
+	"os"
 	"os/exec"
 	"strings"
 )
@@ -17,10 +19,13 @@ func Run(target, ports string, timeout ...string) ([]byte, error) {
 	}
 	args = append(args, target)
 
-	var stdout, stderr bytes.Buffer
+	fmt.Fprintf(os.Stderr, "  → Running nmap %s\n", strings.Join(args, " "))
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
 	cmd := exec.Command("nmap", args...)
 	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
+	cmd.Stderr = io.MultiWriter(os.Stderr, &stderr)
 
 	if err := cmd.Run(); err != nil {
 		if len(stderr.Bytes()) > 0 {
