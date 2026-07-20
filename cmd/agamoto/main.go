@@ -10,9 +10,8 @@ import (
 var rootCmd = &cobra.Command{
 	Use:   "agamoto",
 	Short: "Network reconnaissance tool",
-	Long: `A single-binary network reconnaissance tool — scans targets,
-fingerprints services, searches the web, and produces AI-summarized
-risk reports using any OpenAI-compatible provider.`,
+	Long: `A single-binary network reconnaissance tool — wraps nmap,
+parses scan output, and prints readable reports.`,
 }
 
 func main() {

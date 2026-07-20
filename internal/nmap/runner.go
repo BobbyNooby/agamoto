@@ -9,14 +9,9 @@ import (
 	"strings"
 )
 
-func Run(target, ports string, timeout ...string) ([]byte, error) {
-	args := []string{"-oX", "-", "-sV"}
-	if ports != "" {
-		args = append(args, "-p", ports)
-	}
-	if len(timeout) > 0 && timeout[0] != "" {
-		args = append(args, "--max-rtt-timeout", timeout[0])
-	}
+func Run(target string, extraArgs []string) ([]byte, error) {
+	args := []string{"-oX", "-"}
+	args = append(args, extraArgs...)
 	args = append(args, target)
 
 	fmt.Fprintf(os.Stderr, "  → Running nmap %s\n", strings.Join(args, " "))
