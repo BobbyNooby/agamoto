@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 )
@@ -45,13 +46,16 @@ func TestPingUnauthorized(t *testing.T) {
 	}
 }
 
-func TestChat(t *testing.T) {
+func TestChatStream(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != "POST" {
 			t.Errorf("expected POST, got %s", r.Method)
 		}
 		if r.URL.Path != "/chat/completions" {
 			t.Errorf("expected /chat/completions, got %s", r.URL.Path)
+		}
+		if r.Header.Get("Accept") != "text/event-stream" {
+			t.Errorf("expected text/event-stream accept header, got %s", r.Header.Get("Accept"))
 		}
 
 		var req ChatRequest
@@ -68,48 +72,55 @@ func TestChat(t *testing.T) {
 			t.Errorf("expected user role, got %s", req.Messages[1].Role)
 		}
 
-		resp := ChatResponse{
-			Choices: []struct {
-				Message struct {
-					Content string `json:"content"`
-				} `json:"message"`
-			}{
-				{Message: struct {
-					Content string `json:"content"`
-				}{Content: "Test analysis response"}},
-			},
-		}
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp)
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("data: {\"choices\":[{\"delta\":{\"content\":\"Test \"}}]}\n\n"))
+		w.Write([]byte("data: {\"choices\":[{\"delta\":{\"content\":\"analysis\"}}]}\n\n"))
+		w.Write([]byte("data: [DONE]\n\n"))
 	}))
 	defer server.Close()
 
 	client := NewClient(server.URL, "test-key", "test-model", 5*time.Second)
-	response, err := client.Chat("system prompt", "user message")
+	var tokens []string
+	response, err := client.ChatStream("system prompt", "user message", func(token string) {
+		tokens = append(tokens, token)
+	})
 	if err != nil {
-		t.Fatalf("Chat: %v", err)
+		t.Fatalf("ChatStream: %v", err)
 	}
 
-	if response != "Test analysis response" {
-		t.Errorf("expected 'Test analysis response', got '%s'", response)
+	if response != "Test analysis" {
+		t.Errorf("expected 'Test analysis', got '%s'", response)
+	}
+	if len(tokens) != 2 || tokens[0] != "Test " || tokens[1] != "analysis" {
+		t.Errorf("unexpected tokens: %v", tokens)
 	}
 }
 
-func TestChatEmptyChoices(t *testing.T) {
+func TestChatStreamError(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		resp := ChatResponse{Choices: []struct {
-			Message struct {
-				Content string `json:"content"`
-			} `json:"message"`
-		}{}}
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp)
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte("boom"))
 	}))
 	defer server.Close()
 
 	client := NewClient(server.URL, "test-key", "test-model", 5*time.Second)
-	_, err := client.Chat("system", "user")
+	_, err := client.ChatStream("system", "user", func(string) {})
 	if err == nil {
-		t.Fatal("expected error for empty choices")
+		t.Fatal("expected error for 500 response")
+	}
+}
+
+func TestMarshalNoEscape(t *testing.T) {
+	v := map[string]string{"content": "<tag> & value >"}
+	b, err := marshalNoEscape(v)
+	if err != nil {
+		t.Fatalf("marshalNoEscape: %v", err)
+	}
+	if strings.Contains(string(b), `\u003c`) || strings.Contains(string(b), `\u003e`) || strings.Contains(string(b), `\u0026`) {
+		t.Fatalf("expected no HTML unicode escapes, got %s", string(b))
+	}
+	if !strings.Contains(string(b), "<tag>") {
+		t.Fatalf("expected literal <tag>, got %s", string(b))
 	}
 }

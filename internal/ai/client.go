@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 )
@@ -17,17 +18,17 @@ type ChatMessage struct {
 }
 
 type ChatRequest struct {
-	Model       string        `json:"model"`
-	Messages    []ChatMessage `json:"messages"`
-	MaxTokens   int           `json:"max_tokens,omitempty"`
+	Model            string        `json:"model"`
+	Messages         []ChatMessage `json:"messages"`
+	MaxTokens        int           `json:"max_tokens,omitempty"`
+	Plugins          []Plugin      `json:"plugins,omitempty"`
+	FrequencyPenalty float64       `json:"frequency_penalty,omitempty"`
+	PresencePenalty  float64       `json:"presence_penalty,omitempty"`
 }
 
-type ChatResponse struct {
-	Choices []struct {
-		Message struct {
-			Content string `json:"content"`
-		} `json:"message"`
-	} `json:"choices"`
+type Plugin struct {
+	ID         string `json:"id"`
+	MaxResults int    `json:"max_results,omitempty"`
 }
 
 type StreamChunk struct {
@@ -39,10 +40,12 @@ type StreamChunk struct {
 }
 
 type Client struct {
-	APIBase string
-	APIKey  string
-	Model   string
-	HTTP    *http.Client
+	APIBase             string
+	APIKey              string
+	Model               string
+	HTTP                *http.Client
+	WebSearchMaxResults int
+	Debug               bool
 }
 
 func NewClient(apiBase, apiKey, model string, timeout time.Duration) *Client {
@@ -54,95 +57,90 @@ func NewClient(apiBase, apiKey, model string, timeout time.Duration) *Client {
 	}
 }
 
-func (c *Client) Chat(system, user string) (string, error) {
+// marshalNoEscape marshals v to JSON without escaping HTML characters
+// (<, >, &) so debug output and payloads remain readable.
+func marshalNoEscape(v interface{}) ([]byte, error) {
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(v); err != nil {
+		return nil, err
+	}
+	b := buf.Bytes()
+	if len(b) > 0 && b[len(b)-1] == '\n' {
+		b = b[:len(b)-1]
+	}
+	return b, nil
+}
+
+// buildRequest creates the common ChatRequest used by both streaming and
+// non-streaming calls. It applies penalties and web-search plugin settings.
+func (c *Client) buildRequest(system, user string) ChatRequest {
 	req := ChatRequest{
 		Model: c.Model,
 		Messages: []ChatMessage{
 			{Role: "system", Content: system},
 			{Role: "user", Content: user},
 		},
+		FrequencyPenalty: 0.2,
+		PresencePenalty:  0.2,
 	}
-
-	payload, err := json.Marshal(req)
-	if err != nil {
-		return "", fmt.Errorf("ai marshal: %w", err)
+	if c.WebSearchMaxResults > 0 {
+		req.Plugins = []Plugin{{ID: "web", MaxResults: c.WebSearchMaxResults}}
 	}
+	return req
+}
 
+// post performs the HTTP POST to the chat completions endpoint and returns
+// the response body for the caller to handle.
+func (c *Client) post(payload []byte, stream bool) (*http.Response, error) {
 	httpReq, err := http.NewRequest("POST", c.APIBase+"/chat/completions", bytes.NewReader(payload))
 	if err != nil {
-		return "", fmt.Errorf("ai request: %w", err)
+		return nil, fmt.Errorf("ai request: %w", err)
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
+	if stream {
+		httpReq.Header.Set("Accept", "text/event-stream")
+	}
 	if c.APIKey != "" {
 		httpReq.Header.Set("Authorization", "Bearer "+c.APIKey)
 	}
 
 	resp, err := c.HTTP.Do(httpReq)
 	if err != nil {
-		return "", fmt.Errorf("ai: %w", err)
+		return nil, fmt.Errorf("ai: %w", err)
 	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", fmt.Errorf("ai read: %w", err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("ai: %s: %s", resp.Status, string(body))
-	}
-
-	var chatResp ChatResponse
-	if err := json.Unmarshal(body, &chatResp); err != nil {
-		return "", fmt.Errorf("ai decode: %w", err)
-	}
-
-	if len(chatResp.Choices) == 0 {
-		return "", fmt.Errorf("ai: no choices in response")
-	}
-
-	return chatResp.Choices[0].Message.Content, nil
+	return resp, nil
 }
 
 func (c *Client) ChatStream(system, user string, onToken func(string)) (string, error) {
-	req := ChatRequest{
-		Model: c.Model,
-		Messages: []ChatMessage{
-			{Role: "system", Content: system},
-			{Role: "user", Content: user},
-		},
-		MaxTokens: 0,
-	}
+	req := c.buildRequest(system, user)
 
-	// Add stream flag via custom JSON marshaling or set after marshal
-	// We'll marshal to map and add stream field
 	payloadMap := map[string]interface{}{
-		"model":    req.Model,
-		"messages": req.Messages,
-		"stream":   true,
+		"model":             req.Model,
+		"messages":          req.Messages,
+		"stream":            true,
+		"frequency_penalty": req.FrequencyPenalty,
+		"presence_penalty":  req.PresencePenalty,
 	}
 	if req.MaxTokens > 0 {
 		payloadMap["max_tokens"] = req.MaxTokens
 	}
+	if len(req.Plugins) > 0 {
+		payloadMap["plugins"] = req.Plugins
+	}
 
-	payload, err := json.Marshal(payloadMap)
+	payload, err := marshalNoEscape(payloadMap)
 	if err != nil {
 		return "", fmt.Errorf("ai marshal: %w", err)
 	}
-
-	httpReq, err := http.NewRequest("POST", c.APIBase+"/chat/completions", bytes.NewReader(payload))
-	if err != nil {
-		return "", fmt.Errorf("ai request: %w", err)
-	}
-	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("Accept", "text/event-stream")
-	if c.APIKey != "" {
-		httpReq.Header.Set("Authorization", "Bearer "+c.APIKey)
+	if c.Debug {
+		fmt.Fprintf(os.Stderr, "[debug] AI stream request payload (%d bytes): %s\n", len(payload), string(payload))
 	}
 
-	resp, err := c.HTTP.Do(httpReq)
+	resp, err := c.post(payload, true)
 	if err != nil {
-		return "", fmt.Errorf("ai: %w", err)
+		return "", err
 	}
 	defer resp.Body.Close()
 
@@ -165,7 +163,7 @@ func (c *Client) ChatStream(system, user string, onToken func(string)) (string, 
 
 		var chunk StreamChunk
 		if err := json.Unmarshal([]byte(data), &chunk); err != nil {
-			continue // skip malformed chunks
+			continue
 		}
 		if len(chunk.Choices) > 0 && chunk.Choices[0].Delta.Content != "" {
 			token := chunk.Choices[0].Delta.Content

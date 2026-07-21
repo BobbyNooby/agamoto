@@ -29,15 +29,17 @@ func TestRealPingOpenRouter(t *testing.T) {
 	}
 }
 
-func TestRealChatOpenRouter(t *testing.T) {
+func TestRealChatStreamOpenRouter(t *testing.T) {
 	apiBase, apiKey, model := resolveTestConfig()
 	if apiKey == "" {
 		t.Skip("no API key found in env or config file, skipping real API test")
 	}
 
-	t.Logf("Chat with %s using model %s", apiBase, model)
+	t.Logf("ChatStream with %s using model %s", apiBase, model)
 	client := NewClient(apiBase, apiKey, model, 15*time.Second)
-	resp, err := client.Chat("Respond with only the word hello", "Say hello")
+	resp, err := client.ChatStream("Respond with only the word hello", "Say hello", func(token string) {
+		_ = token
+	})
 	if err != nil {
 		t.Fatalf("Real chat failed: %v", err)
 	}
