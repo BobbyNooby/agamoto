@@ -53,7 +53,21 @@ Prompts live in [`internal/ai/prompts.go`](internal/ai/prompts.go). Edit them if
 
 ## Install
 
-Needs [Go](https://go.dev/dl/) and [nmap](https://nmap.org/download.html).
+One-liner for macOS / Linux (installs nmap if missing, then installs agamoto):
+
+```bash
+curl -fsSL https://github.com/BobbyNooby/agamoto/raw/main/install.sh | sh
+```
+
+You need [Go](https://go.dev/dl/) installed. If you already have agamoto, the script will skip the install and tell you how to update.
+
+To force a reinstall:
+
+```bash
+curl -fsSL https://github.com/BobbyNooby/agamoto/raw/main/install.sh | sh -s -- --force
+```
+
+Build from source:
 
 ```bash
 git clone https://github.com/BobbyNooby/agamoto.git

@@ -10,6 +10,10 @@ import (
 )
 
 func Run(target string, extraArgs []string) ([]byte, error) {
+	if _, err := exec.LookPath("nmap"); err != nil {
+		return nil, fmt.Errorf("nmap is not installed. Run 'agamoto doctor --install' to install it")
+	}
+
 	args := []string{"-oX", "-", "--stats-every", "5s"}
 	args = append(args, extraArgs...)
 	args = append(args, target)

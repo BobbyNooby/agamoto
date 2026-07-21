@@ -3,14 +3,18 @@ package main
 import (
 	"fmt"
 	"os"
+	"os/signal"
 	"strings"
 
 	"github.com/spf13/cobra"
 )
 
+var version = "dev"
+
 var rootCmd = &cobra.Command{
-	Use:   "agamoto",
-	Short: "Network reconnaissance tool",
+	Use:     "agamoto",
+	Short:   "Network reconnaissance tool",
+	Version: version,
 	Long: `A single-binary network reconnaissance tool — wraps nmap,
 parses scan output, and prints readable reports.`,
 }
@@ -23,6 +27,14 @@ func init() {
 }
 
 func main() {
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, os.Interrupt)
+	go func() {
+		<-sigCh
+		fmt.Fprintln(os.Stderr, "\nInterrupted.")
+		os.Exit(130)
+	}()
+
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)

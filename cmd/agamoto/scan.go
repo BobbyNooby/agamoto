@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"os/signal"
 	"strings"
 	"sync"
 	"time"
@@ -253,8 +254,21 @@ Anything after "--" is passed directly to nmap. For example:
 		stopSpinner := make(chan bool)
 		go spinner(stopSpinner)
 
-		var streamStarted bool
 		md := render.NewStreamRenderer()
+
+		// Handle Ctrl+C during streaming to leave the terminal clean.
+		sigCh := make(chan os.Signal, 1)
+		signal.Notify(sigCh, os.Interrupt)
+		defer signal.Stop(sigCh)
+		go func() {
+			<-sigCh
+			close(stopSpinner)
+			md.Flush(os.Stdout)
+			fmt.Println()
+			os.Exit(130)
+		}()
+
+		var streamStarted bool
 		aiStart := time.Now()
 
 		var aiResponse string
