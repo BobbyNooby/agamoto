@@ -9,29 +9,28 @@ import (
 )
 
 var (
-	cfgAPIKey         string
-	cfgAPIBase        string
-	cfgModel          string
-	cfgNVDAPIKey      string
-	cfgMaxResearchPasses int
-	cfgMaxURLsPerQuery   int
+	cfgAPIKey             string
+	cfgAPIBase            string
+	cfgModel              string
+	cfgNVDAPIKey          string
+	cfgWebSearchMaxResults int
 )
 
 var configCmd = &cobra.Command{
-	Use:   "config",
-	Short: "Manage agamoto configuration",
+	Use:     "config",
+	Aliases: []string{"c"},
+	Short:   "Manage agamoto configuration",
 	Long: `View or update agamoto configuration stored in ~/.config/agamoto/config.json.
 
 Configuration precedence (low to high):
   defaults < config file < environment variables < flags
 
 Available settings:
-  --api-key             OpenAI-compatible API key
-  --api-base            OpenAI-compatible base URL
-  --model               Model name (default: deepseek/deepseek-v4-flash)
-  --nvd-api-key         NVD API key (optional; higher rate limits)
-  --max-research-passes Maximum deep-research passes (default: 3)
-  --max-urls-per-query  Maximum URLs to fetch per DDG query (default: 5)`,
+  --api-key                  OpenAI-compatible API key
+  --api-base                 OpenAI-compatible base URL
+  --model                    Model name (default: deepseek/deepseek-v4-flash)
+  --nvd-api-key              NVD API key (optional; higher rate limits)
+  --web-search-max-results   Web search results per request (default: 5)`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		fileCfg, err := config.Load()
 		if err != nil {
@@ -44,11 +43,9 @@ Available settings:
 			APIBase:           cfgAPIBase,
 			Model:             cfgModel,
 			NVDAPIKey:         cfgNVDAPIKey,
-			MaxResearchPasses: cfgMaxResearchPasses,
-			MaxURLsPerQuery:   cfgMaxURLsPerQuery,
+			WebSearchMaxResults: cfgWebSearchMaxResults,
 		}
 
-		// Apply precedence: defaults < file < env < flags
 		cfg := config.Merge(config.Merge(fileCfg, envCfg), flagCfg)
 
 		if cmd.Flags().NFlag() == 0 {
@@ -70,8 +67,7 @@ func init() {
 	configCmd.Flags().StringVar(&cfgAPIKey, "api-key", "", "OpenAI-compatible API key")
 	configCmd.Flags().StringVar(&cfgAPIBase, "api-base", "", "OpenAI-compatible base URL")
 	configCmd.Flags().StringVar(&cfgModel, "model", "", "Model name")
-	configCmd.Flags().StringVar(&cfgNVDAPIKey, "nvd-api-key", "", "NVD API key (optional; removes rate limits)")
-	configCmd.Flags().IntVar(&cfgMaxResearchPasses, "max-research-passes", 0, "Maximum deep-research passes")
-	configCmd.Flags().IntVar(&cfgMaxURLsPerQuery, "max-urls-per-query", 0, "Maximum URLs to fetch per DDG query")
+	configCmd.Flags().StringVar(&cfgNVDAPIKey, "nvd-api-key", "", "NVD API key (optional; higher rate limits)")
+	configCmd.Flags().IntVar(&cfgWebSearchMaxResults, "web-search-max-results", 0, "Web search results per request (1-10)")
 	rootCmd.AddCommand(configCmd)
 }
