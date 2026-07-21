@@ -50,19 +50,3 @@ func (c *Cache) Get(key string) (interface{}, bool) {
 	return entry.value, true
 }
 
-func (c *Cache) Delete(key string) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	delete(c.items, key)
-}
-
-func (c *Cache) PurgeExpired() {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	now := time.Now()
-	for k, v := range c.items {
-		if now.After(v.expiresAt) {
-			delete(c.items, k)
-		}
-	}
-}

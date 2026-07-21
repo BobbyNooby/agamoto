@@ -8,28 +8,33 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/BobbyNooby/agamoto/internal/nmap"
 )
 
 const nvdAPIBase = "https://services.nvd.nist.gov/rest/json/cves/2.0"
 
 // NVDClient queries the National Vulnerability Database.
 type NVDClient struct {
-	APIKey string       // optional; higher rate limits if set
+	APIKey string        // optional; higher rate limits if set
 	HTTP   *http.Client
 	cache  *Cache
+	Logf   func(format string, args ...interface{}) // optional logger
 }
 
 func NewNVDClient(apiKey string) *NVDClient {
-	return &NVDClient{
+	c := &NVDClient{
 		APIKey: apiKey,
 		HTTP:   &http.Client{Timeout: 10 * time.Second},
 		cache:  NewCache(1 * time.Hour),
+		Logf:   func(format string, args ...interface{}) {},
 	}
+	return c
 }
 
 type nvdResponse struct {
-	ResultsPerPage  int        `json:"resultsPerPage"`
-	Vulnerabilities []nvdVuln  `json:"vulnerabilities"`
+	ResultsPerPage  int       `json:"resultsPerPage"`
+	Vulnerabilities []nvdVuln `json:"vulnerabilities"`
 }
 
 type nvdVuln struct {
@@ -37,8 +42,8 @@ type nvdVuln struct {
 }
 
 type nvdCVE struct {
-	ID           string    `json:"id"`
-	Descriptions []nvdDesc `json:"descriptions"`
+	ID           string     `json:"id"`
+	Descriptions []nvdDesc  `json:"descriptions"`
 	Metrics      nvdMetrics `json:"metrics"`
 }
 
@@ -84,8 +89,11 @@ type CVE struct {
 func (c *NVDClient) Query(keyword string) ([]CVE, error) {
 	cacheKey := "nvd:" + keyword
 	if v, ok := c.cache.Get(cacheKey); ok {
+		c.Logf("[agamoto]   NVD cache hit: %s (%d CVE(s))\n", keyword, len(v.([]CVE)))
 		return v.([]CVE), nil
 	}
+
+	c.Logf("[agamoto]   Querying NVD: \"%s\"\n", keyword)
 
 	u, _ := url.Parse(nvdAPIBase)
 	q := u.Query()
@@ -138,6 +146,7 @@ func (c *NVDClient) Query(keyword string) ([]CVE, error) {
 	}
 
 	c.cache.Set(cacheKey, cves)
+	c.Logf("[agamoto]   NVD returned %d CVE(s) for \"%s\"\n", len(cves), keyword)
 	return cves, nil
 }
 
@@ -184,7 +193,7 @@ func (c *NVDClient) BatchQueryServices(services []ServiceFingerprint) ([]CVE, er
 		}
 		cves, err := c.QueryService(svc.Product, svc.Version)
 		if err != nil {
-			// NVD timeouts are non-fatal; log and continue
+			c.Logf("[agamoto]   NVD query failed for %s %s: %v\n", svc.Product, svc.Version, err)
 			continue
 		}
 		for _, cve := range cves {
@@ -203,6 +212,32 @@ func (c *NVDClient) BatchQueryServices(services []ServiceFingerprint) ([]CVE, er
 type ServiceFingerprint struct {
 	Product string
 	Version string
+}
+
+// FingerprintsFromNmapRun extracts unique product+version fingerprints from an nmap run.
+func FingerprintsFromNmapRun(nmapRun *nmap.NmapRun) []ServiceFingerprint {
+	seen := make(map[string]bool)
+	var fps []ServiceFingerprint
+	for _, host := range nmapRun.Hosts {
+		for _, port := range host.Ports {
+			if port.State.State != "open" {
+				continue
+			}
+			if port.Service.Product == "" {
+				continue
+			}
+			key := port.Service.Product + "|" + port.Service.Version
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+			fps = append(fps, ServiceFingerprint{
+				Product: port.Service.Product,
+				Version: port.Service.Version,
+			})
+		}
+	}
+	return fps
 }
 
 // FormatCVEsForPrompt returns a markdown string of CVEs for the AI prompt.
