@@ -9,10 +9,9 @@ import (
 )
 
 const (
-	DefaultAPIBase           = "https://openrouter.ai/api/v1"
-	DefaultModel             = "deepseek/deepseek-v4-flash"
-	DefaultMaxResearchPasses = 3
-	DefaultMaxURLsPerQuery   = 5
+	DefaultAPIBase            = "https://openrouter.ai/api/v1"
+	DefaultModel              = "deepseek/deepseek-v4-flash"
+	DefaultWebSearchMaxResults = 5
 )
 
 type Config struct {
@@ -20,16 +19,14 @@ type Config struct {
 	APIBase           string `json:"api_base"`
 	Model             string `json:"model"`
 	NVDAPIKey         string `json:"nvd_api_key"`
-	MaxResearchPasses int    `json:"max_research_passes"`
-	MaxURLsPerQuery   int    `json:"max_urls_per_query"`
+	WebSearchMaxResults int  `json:"web_search_max_results"`
 }
 
 func Defaults() Config {
 	return Config{
-		APIBase:           DefaultAPIBase,
-		Model:             DefaultModel,
-		MaxResearchPasses: DefaultMaxResearchPasses,
-		MaxURLsPerQuery:   DefaultMaxURLsPerQuery,
+		APIBase:            DefaultAPIBase,
+		Model:              DefaultModel,
+		WebSearchMaxResults: DefaultWebSearchMaxResults,
 	}
 }
 
@@ -93,8 +90,7 @@ func FromEnv() Config {
 		APIBase:           os.Getenv("OPENAI_BASE_URL"),
 		Model:             os.Getenv("AI_MODEL"),
 		NVDAPIKey:         os.Getenv("NVD_API_KEY"),
-		MaxResearchPasses: envInt("AGAMOTO_MAX_RESEARCH_PASSES", DefaultMaxResearchPasses),
-		MaxURLsPerQuery:   envInt("AGAMOTO_MAX_URLS_PER_QUERY", DefaultMaxURLsPerQuery),
+		WebSearchMaxResults: envInt("AGAMOTO_WEB_SEARCH_MAX_RESULTS", DefaultWebSearchMaxResults),
 	}
 }
 
@@ -111,11 +107,8 @@ func Merge(base, overlay Config) Config {
 	if overlay.NVDAPIKey != "" {
 		base.NVDAPIKey = overlay.NVDAPIKey
 	}
-	if overlay.MaxResearchPasses > 0 {
-		base.MaxResearchPasses = overlay.MaxResearchPasses
-	}
-	if overlay.MaxURLsPerQuery > 0 {
-		base.MaxURLsPerQuery = overlay.MaxURLsPerQuery
+	if overlay.WebSearchMaxResults > 0 {
+		base.WebSearchMaxResults = overlay.WebSearchMaxResults
 	}
 	return base
 }
@@ -129,8 +122,8 @@ func (c Config) String() string {
 	if c.NVDAPIKey != "" {
 		nvdDisplay = "(set)"
 	}
-	return fmt.Sprintf("api_key:             %s\napi_base:            %s\nmodel:               %s\nnvd_api_key:         %s\nmax_research_passes: %d\nmax_urls_per_query:  %d\n",
-		keyDisplay, c.APIBase, c.Model, nvdDisplay, c.MaxResearchPasses, c.MaxURLsPerQuery)
+	return fmt.Sprintf("api_key:                  %s\napi_base:                 %s\nmodel:                    %s\nnvd_api_key:              %s\nweb_search_max_results:   %d\n",
+		keyDisplay, c.APIBase, c.Model, nvdDisplay, c.WebSearchMaxResults)
 }
 
 func envInt(name string, fallback int) int {
