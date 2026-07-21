@@ -10,7 +10,7 @@ import (
 )
 
 func Run(target string, extraArgs []string) ([]byte, error) {
-	args := []string{"-oX", "-"}
+	args := []string{"-oX", "-", "--stats-every", "5s"}
 	args = append(args, extraArgs...)
 	args = append(args, target)
 
