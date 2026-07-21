@@ -12,6 +12,8 @@ Given the following nmap scan results, provide a layered attack plan:
    - Attack techniques mapped to each discovered service (e.g. credential attacks, enumeration, known exploit chains)
 4. Execution Order
    - Suggested sequence of actions, prioritized by information gain and exploitability
+5. Recommended agamoto Follow-Up
+   - Suggest a specific agamoto scan command (with nmap passthrough flags) to run next, e.g. agamoto scan <target> -- -p <ports> -sV -A --script vuln
 
 Scan results:
 %s`
@@ -46,6 +48,8 @@ Given the following nmap scan results and web research about a target, provide a
    - Prioritized by exploitability and information value
 4. Phased Execution Order
    - Recommended sequence: recon → validation → exploitation
+5. Recommended agamoto Follow-Up
+   - Suggest a specific agamoto scan command (with nmap passthrough flags) to run next, e.g. agamoto scan <target> -- -p <ports> -sV -A --script vuln
 
 Scan results:
 %s
