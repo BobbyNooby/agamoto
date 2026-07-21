@@ -3,12 +3,14 @@ package main
 import (
 	"fmt"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/BobbyNooby/agamoto/internal/ai"
 	"github.com/BobbyNooby/agamoto/internal/config"
 	"github.com/BobbyNooby/agamoto/internal/nmap"
 	"github.com/BobbyNooby/agamoto/internal/report"
+	"github.com/BobbyNooby/agamoto/internal/research"
 	"github.com/spf13/cobra"
 )
 
@@ -35,6 +37,31 @@ func spinner(stop chan bool) {
 	}
 }
 
+func extractFingerprints(nmapRun *nmap.NmapRun) []research.ServiceFingerprint {
+	seen := make(map[string]bool)
+	var fps []research.ServiceFingerprint
+	for _, host := range nmapRun.Hosts {
+		for _, port := range host.Ports {
+			if port.State.State != "open" {
+				continue
+			}
+			if port.Service.Product == "" {
+				continue
+			}
+			key := port.Service.Product + "|" + port.Service.Version
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+			fps = append(fps, research.ServiceFingerprint{
+				Product: port.Service.Product,
+				Version: port.Service.Version,
+			})
+		}
+	}
+	return fps
+}
+
 var scanCmd = &cobra.Command{
 	Use:   "scan <target> [-- <nmap-args>]",
 	Short: "Scan a target with nmap",
@@ -47,13 +74,6 @@ Anything after "--" is passed directly to nmap. For example:
 	RunE: func(cmd *cobra.Command, args []string) error {
 		target := args[0]
 		nmapArgs := args[1:]
-
-		if scanNoDeep {
-			fmt.Fprintln(os.Stderr, "[agamoto] --no-deep-research set (not implemented yet)")
-		}
-		if scanNoResearch {
-			fmt.Fprintln(os.Stderr, "[agamoto] --no-web-search set (not implemented yet)")
-		}
 
 		// Load config for AI
 		cfg := config.Merge(config.Merge(config.Defaults(), func() config.Config {
@@ -118,8 +138,99 @@ Anything after "--" is passed directly to nmap. For example:
 				return nil
 			}
 
+			fingerprints := extractFingerprints(nmapRun)
+			corpus := research.NewCorpus()
+
+			if len(fingerprints) > 0 && !scanNoResearch {
+				fmt.Fprintf(os.Stderr, "[agamoto] Researching CVE intelligence...\n")
+
+				nvdClient := research.NewNVDClient(cfg.NVDAPIKey)
+				kevLoader := research.NewKEVLoader()
+
+				var cves []research.CVE
+				var kevCatalog *research.KEVCatalog
+				var kevErr error
+
+				var wg sync.WaitGroup
+				wg.Add(2)
+				go func() {
+					defer wg.Done()
+					var err error
+					cves, err = nvdClient.BatchQueryServices(fingerprints)
+					if err != nil {
+						fmt.Fprintf(os.Stderr, "[agamoto] NVD query failed: %v\n", err)
+					}
+				}()
+				go func() {
+					defer wg.Done()
+					kevCatalog, kevErr = kevLoader.Load()
+					if kevErr != nil {
+						fmt.Fprintf(os.Stderr, "[agamoto] CISA KEV load failed: %v\n", kevErr)
+					}
+				}()
+				wg.Wait()
+
+				if len(cves) > 0 {
+					corpus.AddCVEs(cves)
+				}
+
+				if kevCatalog != nil {
+					seenCVEs := make(map[string]bool)
+					var kevMatches []research.KEVEntry
+					for _, cve := range cves {
+						seenCVEs[cve.ID] = true
+						if entry := kevCatalog.FindByCVE(cve.ID); entry != nil {
+							kevMatches = append(kevMatches, *entry)
+						}
+					}
+					// Fallback fuzzy match by product
+					for _, fp := range fingerprints {
+						for _, entry := range kevCatalog.FindByProduct("", fp.Product) {
+							if !seenCVEs[entry.CveID] {
+								kevMatches = append(kevMatches, entry)
+								seenCVEs[entry.CveID] = true
+							}
+						}
+					}
+					corpus.AddKEVs(kevMatches)
+				}
+
+				fmt.Fprintf(os.Stderr, "[agamoto] Found %d CVE(s) and %d KEV match(es)\n", len(cves), len(corpus.KEVs))
+
+				if scanNoDeep {
+					fmt.Fprintf(os.Stderr, "[agamoto] Running basic web search...\n")
+					webCorpus, err := research.BasicResearch(target, fingerprints)
+					if err == nil && webCorpus != nil {
+						corpus.WebResults = webCorpus.WebResults
+					}
+				} else {
+					passes := cfg.MaxResearchPasses
+					if passes <= 0 {
+						passes = config.DefaultMaxResearchPasses
+					}
+					urls := cfg.MaxURLsPerQuery
+					if urls <= 0 {
+						urls = config.DefaultMaxURLsPerQuery
+					}
+					fmt.Fprintf(os.Stderr, "[agamoto] Running deep web research (%d passes, %d urls/query)...\n", passes, urls)
+					webCorpus, err := research.RunDeepResearch(research.DeepResearchOptions{
+						Target:          target,
+						Services:        fingerprints,
+						MaxPasses:       passes,
+						MaxURLsPerQuery: urls,
+					})
+					if err == nil && webCorpus != nil {
+						corpus.WebResults = webCorpus.WebResults
+						corpus.Articles = webCorpus.Articles
+					}
+				}
+			} else if scanNoResearch {
+				fmt.Fprintf(os.Stderr, "[agamoto] Web research disabled by --no-web-search\n")
+			}
+
 			// Build AI prompt
-			prompt := fmt.Sprintf(ai.ScanPrompt, string(rawXML))
+			researchText := corpus.Format()
+			prompt := fmt.Sprintf(ai.ScanPrompt, string(rawXML), researchText)
 
 			// Spinner
 			stopSpinner := make(chan bool)
