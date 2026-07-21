@@ -26,7 +26,7 @@ func TestFormatTable(t *testing.T) {
 		},
 	}
 
-	out := FormatTable(run, false)
+	out := FormatTable(run)
 
 	if !strings.Contains(out, "192.168.1.1") {
 		t.Error("expected host IP in output")
@@ -36,5 +36,9 @@ func TestFormatTable(t *testing.T) {
 	}
 	if !strings.Contains(out, "OpenSSH") {
 		t.Error("expected OpenSSH in output")
+	}
+	// Version should only appear in the VERSION column, not duplicated in SERVICE.
+	if strings.Contains(out, "OpenSSH 8.0") {
+		t.Error("expected version not duplicated in SERVICE column")
 	}
 }

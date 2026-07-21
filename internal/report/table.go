@@ -7,7 +7,7 @@ import (
 	"github.com/BobbyNooby/agamoto/internal/nmap"
 )
 
-func FormatTable(run *nmap.NmapRun, verbose bool) string {
+func FormatTable(run *nmap.NmapRun) string {
 	var b strings.Builder
 
 	for _, host := range run.Hosts {
@@ -30,22 +30,19 @@ func FormatTable(run *nmap.NmapRun, verbose bool) string {
 		b.WriteString(strings.Repeat("-", 60) + "\n")
 
 		for _, port := range host.Ports {
-			if port.State.State == "open" || verbose {
-				svc := port.Service.Name
-				if port.Service.Product != "" {
-					svc = port.Service.Product
-				}
-				ver := port.Service.Version
-				if ver != "" {
-					svc += " " + ver
-				}
-				b.WriteString(fmt.Sprintf("%-8s %-6s %-20s %s\n",
-					fmt.Sprintf("%d/%s", port.PortID, port.Protocol),
-					port.State.State,
-					svc,
-					port.Service.Version,
-				))
+			if port.State.State != "open" {
+				continue
 			}
+			svc := port.Service.Name
+			if port.Service.Product != "" {
+				svc = port.Service.Product
+			}
+			b.WriteString(fmt.Sprintf("%-8s %-6s %-20s %s\n",
+				fmt.Sprintf("%d/%s", port.PortID, port.Protocol),
+				port.State.State,
+				svc,
+				port.Service.Version,
+			))
 		}
 		b.WriteString("\n")
 	}
