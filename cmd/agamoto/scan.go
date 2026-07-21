@@ -9,6 +9,7 @@ import (
 	"github.com/BobbyNooby/agamoto/internal/ai"
 	"github.com/BobbyNooby/agamoto/internal/config"
 	"github.com/BobbyNooby/agamoto/internal/nmap"
+	"github.com/BobbyNooby/agamoto/internal/render"
 	"github.com/BobbyNooby/agamoto/internal/report"
 	"github.com/BobbyNooby/agamoto/internal/research"
 	"github.com/spf13/cobra"
@@ -237,7 +238,10 @@ Anything after "--" is passed directly to nmap. For example:
 			go spinner(stopSpinner)
 
 			var firstToken bool
-			aiResponse, err := client.ChatStream(
+			md := render.NewStreamFormatter()
+
+			var aiResponse string
+			aiResponse, err = client.ChatStream(
 				"You are a cybersecurity analyst. Be concise.",
 				prompt,
 				func(token string) {
@@ -249,7 +253,12 @@ Anything after "--" is passed directly to nmap. For example:
 							fmt.Fprintln(outputFile, "\n=== AI Analysis ===")
 						}
 					}
-					fmt.Print(token)
+					// Render for terminal
+					rendered := md.Write(token)
+					if rendered != "" {
+						fmt.Print(rendered)
+					}
+					// Raw to file
 					if outputFile != nil {
 						fmt.Fprint(outputFile, token)
 					}
@@ -261,13 +270,18 @@ Anything after "--" is passed directly to nmap. For example:
 				}
 				fmt.Fprintf(os.Stderr, "\n[agamoto] AI analysis error: %v\n", err)
 			} else {
-				if !firstToken {
+				if firstToken {
+					rest := md.Flush()
+					if rest != "" {
+						fmt.Print(rest)
+					}
+				} else {
 					close(stopSpinner)
 					fmt.Println("\n=== AI Analysis ===")
 					if outputFile != nil {
 						fmt.Fprintln(outputFile, "\n=== AI Analysis ===")
 					}
-					fmt.Println(aiResponse)
+					fmt.Print(render.Render(aiResponse))
 					if outputFile != nil {
 						fmt.Fprintln(outputFile, aiResponse)
 					}
